@@ -1,0 +1,2034 @@
+---
+title: 'Estudo de Caso: Efeito Coattail Presidencial nas Eleições Distritais do DF (2006–2022)'
+author: "Pedro Araya"
+date: "16 de novembro de 2025"
+output:
+  rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## INTRODUÇÃO
+
+Este estudo de caso aplica o framework completo de análise de dados do **Google Data Analytics Certificate (Ask → Prepare → Process → Analyze → Share → Act)** para investigar o **efeito coattail presidencial** no contexto do Distrito Federal (DF).
+
+Utilizando **R Studio** como ambiente principal de análise, com **R Markdown** para documentação reproduzível, **SQL no Google BigQuery** para extração eficiente de big data eleitoral, este projeto foca em uma métrica clara e intuitiva: a **correlação** entre os votos do candidato eleito à Presidência e os votos dos deputados distritais eleitos de seu partido ou coligação.
+
+O período analisado abrange cinco eleições gerais (**2006, 2010, 2014, 2018 e 2022**), cobrindo um arco de transformação política marcada pela ascensão do PT, a crise de 2014–2016, o fenômeno Bolsonaro e o retorno de Lula — um ciclo completo de **polarização nacional crescente**.
+
+### Objetivo Geral
+Quantificar, de forma simples e clara, até que ponto o desempenho do presidente eleito "puxa" votos para deputados distritais da mesma coligação no DF, contribuindo para o debate sobre **polarização, alinhamento partidário vertical e autonomia do voto local**.
+
+### Ferramentas e Tecnologias Utilizadas
+- **Google BigQuery** + **SQL**: Extração eficiente e filtrada dos dados eleitorais tratados pela Base dos Dados.
+- **R Studio** + **pacotes**: `tidyverse`, `ggplot2`, `corrr`, `scales`
+- **R Markdown**: Relatório dinâmico, reproduzível e com gráficos interativos.
+- **Google Sheets/CSV**: Validação intermediária e compartilhamento acessível.
+
+### Relevância Prática
+- **Para eleitores**: Entender se seu voto para deputado distrital é realmente "local" ou se reflete afetos nacionais.
+- **Para campanhas de 2026**: Identificar RAs onde o coattail presidencial é forte ou fraco para estratégias de coligação.
+- **Para cientistas políticos**: Evidência empírica simples sobre como a polarização nacional pode se manifestar até mesmo no voto legislativo local.
+
+---
+
+**O presente estudo seguirá rigorosamente as seis etapas do framework do Google Data Analytics Certificate**, com documentação completa, código aberto e resultados visualmente interpretáveis.
+
+---
+
+## PRIMEIRA ETAPA: ASK
+
+### 1. Qual tópico estou explorando?
+Esta análise investiga a existência do efeito coattail presidencial nas eleições para deputado da Câmara Legislativa do Distrito Federal entre 2006 e 2022, ou seja, até que ponto a votação do candidato que virou presidente “puxou” votos para os deputados distritais da mesma coligação.
+
+### 2. Qual é a pergunta central que quero responder?
+Em que medida o desempenho eleitoral do candidato vencedor à Presidência da República influencia o voto para deputados distritais no mesmo pleito. Em resumo: existe correlação forte entre o voto presidencial e o voto distrital? 
+
+### 3. Quais métricas usarei para mensurar meus dados e atingir meus objetivos?
+Cálculo de correlação de votos válidos entre o presidente eleito e os deputados distritais eleitos.
+
+### 4. Quem pode se interessar?
+Eleitores do DF, jornalistas, cientistas políticos, candidatos e assessores de campanha de 2026
+
+### 5. Como essa análise pode ajudar na tomada de decisão?
+Mostrar de forma visual e acessível se existe influência do presidente eleito nos cargos de deputado distrital. Isso pode ajudar a responder até que ponto a polarização está presente nas escolhas mais locais.
+
+---
+
+## SEGUNDA ETAPA: PREPARE
+
+### 1. Onde estão localizados os dados?
+Os dados estão disponíveis publicamente no Google BigQuery, no projeto basedosdados, nas tabelas:
+
+- basedosdados.br_tse_eleicoes.resultados_candidato_municipio_zona
+- basedosdados.br_tse_eleicoes.candidatos (nome do candidato)
+
+Acesso gratuito (sem custo para consultas pequenas) via console do BigQuery ou Google Colab.
+
+### 2. Como os dados estão organizados?
+Bem estruturados e documentados. 
+
+### 3. Há algum problema com os dados?
+
+Não há problemas de qualidade. A Base dos Dados já realizou um pré-tratamento. Os tratamentos realizados foram:
+
+- Remoção de acentos e conversão de texto para letras minúsculas.
+- Remoção de registros duplicados considerando o conjunto completo de colunas.
+- Valores inválidos, como "-9999" ou "#NULO", foram convertidos em nulos.
+- Adequação das colunas que identificam municípios ao formato ID Município IBGE (7 dígitos)
+- Datas inconsistentes na coluna data_nascimento (idades abaixo de 18 ou acima de 120 anos) foram substituídas por valores nulos.
+- Padronização da coluna tipo_eleicao alterando de "eleições municipais" para "eleição ordinária".
+- Padronização da coluna nacionalidade alterando de “brasileira nata” para “brasileira”.
+
+### 4. Como será realizada a coleta?
+Serão realizadas consultas SQL no BigQuery para extrair apenas os registros necessários. Em seguida, o resultado será baixado em formato CSV para uso posterior no R Studio.
+
+---
+
+## TERCEIRA ETAPA: PROCESS
+
+### 1. Quais ferramentas utilizadas?
+Google Bigquery e  SQL.
+
+### 2. A consulta foi documentada?
+Sim! Passa a passo foi criado e pronto para ser replicado.
+
+### 3.Os dados foram limpos e validados? 
+Sim. Foram aplicados os seguintes filtros e tratamentos:
+
+- **sigla_uf = 'DF'** → restringe os resultados ao Distrito Federal.
+- **ano BETWEEN 2006 AND 2022** → define o intervalo temporal analisado.
+- **turno = 1** → garante que apenas o 1º turno seja considerado.
+- **cargo IN ('presidente', 'deputado distrital')** → seleciona apenas os cargos de interesse.
+- **LEFT JOIN com tabela de candidatos** → adiciona o nome completo do candidato via titulo_eleitoral_candidato.
+
+Esse processo garante que os dados retornados sejam completos, consistentes e adequados ao objetivo analítico.
+
+### 4. Consulta SQL utilizada
+
+```{sql, eval=FALSE}
+
+SELECT
+  r.ano,
+  r.turno,
+  r.zona,
+  r.cargo,
+  r.sigla_partido,
+  r.titulo_eleitoral_candidato,
+  c.nome AS nome_candidato,
+  r.resultado,
+  r.votos
+FROM `basedosdados.br_tse_eleicoes.resultados_candidato_municipio_zona` r
+LEFT JOIN `basedosdados.br_tse_eleicoes.candidatos` c
+  ON r.titulo_eleitoral_candidato = c.titulo_eleitoral
+WHERE r.ano BETWEEN 2006 AND 2022
+  AND r.sigla_uf = 'DF'
+  AND r.cargo IN ('presidente', 'deputado distrital')
+  AND r.turno = 1;
+  
+```
+
+A consulta foi salva como: "estudo_caso_coattail.csv"
+
+---
+
+## QUARTA ETAPA: ANALYZE, SHARE AND ACT
+
+Primeiro, carregaremos os pacotes que serão utilizados nessa análise. Reforçando que não é possivel instalar pacotes em R markdown, então instale os pacotes que serão utilizados antes no console - caso queira replicar a análise.
+
+```{r}
+
+# Carregar pacotes que serão utilizados:
+library(tidyverse)
+library(corrr)
+library(scales)
+
+```
+
+Agora, será criado o dataframe que será utilizado como base para todas as análises seguintes.Importante colocar o arquivo **.csv** na mesma pasta do **.Rmd** para replicar o teste. 
+
+```{r}
+
+# Criando Dataframe
+df_resultado_eleicao <- read.csv("estudo_caso_coattail.csv")
+
+# Números de linhas e colunas do Dataframe
+dim(df_resultado_eleicao)
+
+```
+
+Verificando se o dataframe foi criado corretamente com a função head para observar as 5 primeiras linhas.
+
+```{r}
+
+# Projetando as 5 primeiras linhas
+head(df_resultado_eleicao)
+
+```
+
+Tratamentos iniciais serão: garantir que realmente não haja dados nulos, tratar o nome dos candidatos e remover duplicadas.
+
+```{r}
+
+# Remover nulas
+df_resultado_eleicao <- drop_na(df_resultado_eleicao)
+
+
+# Função para tratar o nome dos candidatos
+padronizar_nome <- function(nome) {
+  nome <- tolower(nome)                              # minúsculas
+  nome <- stringi::stri_trans_general(nome, "Latin-ASCII")  # remover acentos
+  nome <- stringr::str_squish(nome)                  # remover espaços extras
+  
+  partes <- unlist(strsplit(nome, " "))              # separar por espaço
+  partes <- partes[1:min(2, length(partes))]         # pegar 1º e 2º nome
+  
+  paste(partes, collapse = " ")                      # recompor (character)
+}
+
+df_resultado_eleicao <- df_resultado_eleicao %>% 
+  mutate(
+    nome_tratado = sapply(nome_candidato, padronizar_nome)
+  )
+
+# Remover duplicadas
+df_resultado_eleicao <- df_resultado_eleicao %>% 
+  distinct(
+    ano, turno, zona, cargo, sigla_partido, titulo_eleitoral_candidato, resultado, votos,
+    .keep_all = TRUE
+  )
+
+# Visualizar df depois do tratamento
+head(df_resultado_eleicao)
+
+# Números de linhas e colunas depois do tratamento
+dim(df_resultado_eleicao)
+
+```
+
+Verificando estatísticas básicas do Dataframe com funções diferentes. Primeiro, utilizando a função **str()** para visualizar a estrutura interna do data frame, identificando os tipos de variáveis e o formato geral dos dados.
+
+```{r}
+
+str(df_resultado_eleicao)
+
+
+```
+Podemos identificar o tipo de dado de cada coluna e seu significado:
+
+- ano (int) – Ano da eleição registrado como número inteiro.
+- turno (int) – Indica o turno eleitoral, nesse caso de estudo só o primeiro turno.
+- zona (int) – Código da zona eleitoral.
+- cargo (chr) – Nome do cargo disputado, armazenado como texto.
+- sigla_partido (chr) – Sigla do partido do candidato.
+- titulo_eleitoral_candidato (num) – Número do título eleitoral do candidato, apresentado como valor numérico.
+- nome_candidato (chr) – Nome completo do candidato.
+- resultado (chr) – Situação do candidato na eleição.
+- votos (int) – Número de votos recebidos.
+
+Agora utilizando a função **summary()**.
+
+```{r}
+
+summary(df_resultado_eleicao)
+
+```
+Podemos observar que na coluna ano, os dados Variam entre 2006 e 2022 - garantia de que o filtro deu certo. Todos os registros pertencem ao 1º turno, como iremos comparar dados entre presidente e deputado distrital devemos utilizar somente os dados de primeiro turno. As zonas eleitorais variam de 1 a 21, que são as zonas de voto do distrito federal (inclusive, será necessário criar um dataframe manualmente para ter uma tabela de correspondência entre o número da zona e a região administrativa respectiva). A diferença grande entre média e mediana indica presença de poucos candidatos com votação muito alta, puxando a média para cima.
+
+---
+
+### 1. Perguntas a serem respondidas com EDA
+
+#### Top 5 Partidos que mais recebem votos por ano para o cargo de presidente
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 5 partidos mais votodos para presidente em cada eleição
+df_partidos_com_mais_votos_presidente <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente") %>%
+  group_by(sigla_partido, ano) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(ano, desc(votos_total)) %>%
+  group_by(ano) %>% 
+  slice_head(n = 5)
+
+# Criar gráfico
+ggplot(
+  
+  # Definir qual dataframe será usado no gráfico (nesse caso o de mais votos no partido para presidente - df_partidos_com_mais_votos_presidente)
+  data = df_partidos_com_mais_votos_presidente,
+  
+  # Definir quais dados estarão no eixo X e Y
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  # Colunas com barras azuis
+  geom_col(fill = "blue", width = 0.7) +
+  
+  # Adicionar rótulo nas barras
+  geom_text(aes(label = scales::comma(votos_total)),
+            # Definir posiçao do texto fora da barra: 
+            hjust = 0,
+            # Cor e tamanho do texto
+            color = "black", 
+            size = 3) +
+  
+  # Transforma o gráfico em Barras Horizontais
+  coord_flip() +
+  
+  # Expande a visualização do gráfico no eito Y
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  
+  # Adiciona mais espaçamento no eito X
+  scale_x_discrete(expand = expansion(add = 0.7)) +
+  
+  # Cria a visualização para cada ano
+  facet_wrap(~ ano, ncol = 1, scales = "free_y") +
+  
+  # Rótulos
+  theme_light() +
+  labs(
+    title = "Top 5 Partidos com Mais Votos para Presidente (por Eleição)",
+    x = "Partido",
+    y = "Total de Votos"
+  )
+
+```
+Análise do cenário de 2006 a 2022 para os 5 partidos mais votados para presidente:
+
+1. Naufrágio do PSDB no DF
+- Teve seu auge entre 2006 a 2014 no DF. O PSDB era uma força dominante. Venceu em 2006 (Alckmin) e 2014 (Aécio), e foi competitivo em 2010 (Serra). O DF era um reduto tucano clássico.
+- Em 2018, os votos no PSDB encolheram para míseros 53 mil votos (Geraldo Alckmin).
+- Provavelmente o eleitor de direita do DF trocou de legenda. Os votos que eram do PSDB migraram quase integralmente para o PSL (2018) e PL (2022) com o movimento bolsonarista. Além disso, nesses anos, se intensificou a narrativa de que o PSDB nunca foi um partido verdadeiramente de direita.
+
+2. Marina Silva como alternativa para a esquerda
+- Em 2010 e 2014, o PV e o PSB (ambos tendo Marina como candidata a presidência) arrecadaram uma quantidade competitiva de votos.
+- Isso mostra que o DF flertou com intensidade com uma alternativa progressista/ambientalista antes de guinar para a direita conservadora em 2018.
+
+3. DF nunca permitiu uma consolidação do PT
+- O pior momento da história do PT no DF foi 2018, caindo para menos de 200 mil votos e ficando atrás do Ciro Gomes (candidato que fez uma campanha intensa pelo PDT para se apresentar como uma terceira via para o Brasil).
+- 2022 mostra a força do "Lulismo" e o impacto da polarização no DF. O PT saltou de 190k para 649k votos. Embora não tenha vencido o PL, o PT triplicou seu tamanho em relação à eleição anterior, recuperando o eleitorado que havia perdido para Ciro ou brancos/nulos.
+
+4. Consolidação do Bolsonarismo
+- Estabilidade do voto bolsonarista aponta para uma fidelidade altíssima do eleitor ao Bolsonaro.Em 2018 (PSL): 936.494 votos. E em 2022 (PL): 910.397 votos.
+- Isso indica um eleitorado muito convicto e consolidado, difícil de ser penetrado pela esquerda.
+
+#### Top 5 Partidos que mais recebem votos por ano para o cargo de Deputado Distrital
+
+O código usado para fazer essa análise é o mesmo que foi usado para presidente, então será repetido o mesmo código só com a alteração de nome do Dataframe e do filtro utilizado para obter os dados só para deputado distrital.
+
+```{r}
+
+# Criar dataframe para deputados distritais
+df_partidos_com_mais_votos_deputado <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital") %>%
+  group_by(sigla_partido, ano) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(ano, desc(votos_total)) %>%
+  group_by(ano) %>% 
+  slice_head(n = 5)
+
+# Criar gráfico
+ggplot(
+  data = df_partidos_com_mais_votos_deputado,
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0,
+            color = "black", 
+            size = 3) +
+  
+  coord_flip() +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  
+  scale_x_discrete(expand = expansion(add = 0.7)) +
+  
+  facet_wrap(~ ano, ncol = 1, scales = "free_y") +
+  
+  theme_light() +
+  labs(
+    title = "Top 5 Partidos com Mais Votos para Deputado Distrital (por Eleição)",
+    x = "Partido",
+    y = "Total de Votos"
+  )
+
+```
+Análise do poder legislativo no DF por partido (2006–2022):
+
+1. Direita Tradicional consolidada até 2014
+- Auge do PFL,  barra do PFL com 190.223 votos em 2006, que virou DEM e depois União Brasil dominava a política local.
+- o PFL/DEM/União Brasil desaparece do Top 5 a partir de 2014. Esse vácuo de poder na direita tradicional abriu espaço para o que veríamos em 2018 e 2022.
+
+2. Consistênia do MDB
+- O partido aparece forte em 2006, 2010, 2014 e 2022.
+- Mesmo com a onda nacional da era PT (2006-2014) ou Bolsonaro (2022), o MDB manteve sua bancada legislativa sólida, garantindo governabilidade (ou oposição forte) a qualquer governador.
+
+3. PT se mantém vivo como partido
+- Em 2010, o PT atingiu seu pico (192.863 votos), impulsionado pela eleição de Agnelo Queiroz para governador e a popularidade de Lula.
+- Em 2018, o reflexo do impeachment e da Lava Jato foi brutal. O PT caiu para 80.138 votos. Perderam mais da metade do eleitorado legislativo em comparação a 201o e metade dos votos comparado a 2014.
+- Em 2022, o partido volta a crescer para 120.268 votos, estabilizando-se como uma força média-grande, mas longe da hegemonia de outrora.
+
+4. 2018 como ano atípico
+- Em 2018, não houve um partido dominante disparado.
+- Novas siglas aparecem como protagonistas dessa eleição.Isso reflete o voto de protesto contra a "velha política" (PT e PSDB/MDB), que acabou dispersando votos para legendas do "Centrão".
+
+5. Nacionalização do voto distrital
+- O Partido Liberal bateu o recorde histórico do PFL de 2006 no período analisado.
+- Pela primeira vez, o PSOL entra no Top 5 do DF.Grande parte dos votos no PSOL se deve a um fenômeno chamado Fábio Felix, que teve votação recorde (~51 mil votos). Isso mostra que a esquerda no DF renovou seus quadros.
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2006
+
+Os anos seguintes também seguirão o mesmo padrão de código, só havera mudança no ano. E depois no cargo, quando for a análise para deputado distrital.
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para presidente por zona em 2006
+df_mais_votos_patido_por_zona_2006 <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente", ano == 2006) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  # Definir qual dataframe será usado no gráfico (nesse caso o de mais votos no partido para presidente - df_partidos_com_mais_votos_presidente)
+  data = df_mais_votos_patido_por_zona_2006 %>% filter(zona < 6),
+  
+  # Definir quais dados estarão no eixo X e Y
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  # Colunas com barras azuis
+  geom_col(fill = "blue", width = 0.7) +
+  
+  # Adicionar rótulo nas barras
+  geom_text(aes(label = scales::comma(votos_total)),
+            # Cor e tamanho do texto
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  # Cria a visualização para cada ano
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  # Rótulos
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2006 (Zonas 1 a 5)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  # Títulos dos painéis (strips)
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_por_zona_2006 %>% filter(zona > 5 & zona < 11),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2006 (Zonas 6 a 10)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2006 %>% filter(zona > 10 & zona < 16),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2006 (Zonas 11 a 15)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 15
+ggplot(
+  data = df_mais_votos_patido_por_zona_2006 %>% filter(zona > 15),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2006 (acima de 16)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+O ano de 2006 no Distrito Federal apresenta um cenário político muito diferente do atual. Algumas análises possíveis são:
+
+1. O DF de 2006 exibia uma divisão de classes geográfica. Na Zona 1 (Asa Sul/Lago Sul/), o PSDB (Alckmin) superou o PT com quase o dobro de votos. Em contrapartida, nas zonas mais periféricas e populosas (Zona 12, 16 e 17), o cenário inverte: PT venceu o PSDB, mostrando que a força do PT residia nas cidades-satélites.
+
+2. Os dados confirmam que a terceira via de Heloísa Helena (PSOL) foi um voto da elite intelectualizada, e não da massa. Classe média e alta progressista do DF, desiludida com o PT na época, não migrou para o opositor mais claro do PT (que seria o PSDB), mas buscou uma esquerda radical como alternativa. O PSOL manteve-se como a 3ª força consolidada em todas as zonas, algo raro de se ver com tanta consistência.
+
+3. Embora as zonas pareçam dominadas pelo PSDB (que venceu em 13 das 17 zonas), a vitória foi apertada em grandes colégios eleitorais de classe média baixa, como as Zonas 3, 4, 5 e 6. Isso sinalizava que o DF não era totalmente "tucano".
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2010
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para presidente por zona em 2010
+df_mais_votos_patido_por_zona_2010 <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente", ano == 2010) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_por_zona_2010 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2010 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_por_zona_2010 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2010 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2010 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2010 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2010 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2010 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Os gráficos de 2010 revelam o momento mais singular da história política do DF no período analisado:
+
+1. Pode-se notar a onipresença da barra do PV (Marina Silva). Ela venceu em praticamente todas as zonas. Isso prova que o DF, em 2010, rejeitou tanto o continuísmo do PT (Dilma) quanto a oposição tradicional do PSDB (Serra), buscando a terceira via.
+
+2. Comparando com 2006, o PSDB sofreu uma derrota grande.O PSDB encolheu em todas as zonas.
+
+3. O PT perdeu a liderança nas zonas periféricas. A única vitória clara do PT aparece na Zona 6, onde superou o PV (33 mil vs 30 mil votos). Isso mostra que a base lulista resistiu, mas não teve força para barrar o fenômeno Marina.
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2014
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para presidente por zona em 2014
+df_mais_votos_patido_por_zona_2014 <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente", ano == 2014) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_por_zona_2014 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2014 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_por_zona_2014 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2014 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2014 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2014 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2014 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2014 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Os gráficos de 2014 mostram que a dinâmica no DF mudou bastante em relação a eleição de 2010:
+
+1. A classe média alta, que havia flertado com Marina em 2010, voltou para o ninho tucano.A morte de Eduardo Campos e a súbita ascensão de Marina geraram uma incerteza estratégica.
+
+2. Apesar da elite ter voltado ao PSDB, Marina (PSB) manteve e até expandiu sua força em algumas Cidades Satélites.
+
+3. A presença de Marina/PSB em todas as Zonas como a primeira ou segunda força impediu que o PT se recuperasse, mantendo o partido na terceira posição em quase todos as zonas.
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2018
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para presidente por zona em 2018
+df_mais_votos_patido_por_zona_2018 <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente", ano == 2018) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_por_zona_2018 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2018 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_por_zona_2018 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2018 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2018 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2018 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2018 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2018 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Os gráficos de 2018 mostram a ruptura do padrão eleitoral do DF, marcando o fim do ciclo PSDB vs. PT (2006) e do voto volátil de terceira via (2010/2014).
+
+1. O PSL (Bolsonaro) venceu em absolutamente todas as Zonas Eleitorais, desde Plano Piloto até a periferia. O PSL não apenas venceu, mas o fez com uma distância considerável dos votos do PT, consolidando o DF como a capital do antipetismo.
+
+2. A onda antipetista provou ser forte o suficiente para virar até mesmo as Cidades Satélites, que votaram em Lula (2006) ou Marina (2014), agora votando em Bolsonaro. Isso mostra que o voto popular de direita no DF se consolidou muito além do Plano Piloto.
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2022
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para presidente por zona em 2022
+df_mais_votos_patido_por_zona_2022 <- df_resultado_eleicao %>% 
+  filter(cargo == "presidente", ano == 2022) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_por_zona_2022 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2022 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_por_zona_2022 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2022 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2022 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2022 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_por_zona_2022 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Presidente em 2022 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Os gráficos de 2022 mostram a consolidação da polarização ideológica do DF.
+
+1. Ao contrário de 2018 (onde só o PSL dominava), agora temos o retorno do PT com força, resultando em um mapa dividido de forma mais clara. Embora o PL ainda ganhe na maioria das zonas.
+
+2. A Morte da Terceira Via. O eleitor do DF demonstrou que, ao contrário dos ciclos anteriores, agora buscava apenas o candidato com maior chance de vencer o polo oposto. 
+
+
+#### Top 3 Partidos que mais recebem votos por RA para Deputado Distrital em 2006
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para Deputado Distrital por zona em 2006
+df_mais_votos_patido_deputado_por_zona_2006 <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital", ano == 2006) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2006 %>% filter(zona < 6),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2006 (Zonas 1 a 5)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2006 %>% filter(zona > 5 & zona < 11),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2006 (Zonas 6 a 10)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2006 %>% filter(zona > 10 & zona < 16),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2006 (Zonas 11 a 15)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 15
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2006 %>% filter(zona > 15),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  
+  geom_col(fill = "blue", width = 0.7) +
+  
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  
+  facet_wrap(~ zona, scales = "free_x") +
+  
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2006 (acima de 16)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Alguns pontos que podemos analisar baseado nos gráficos de 2006 para Deputado Distrital:
+
+1.O principal padrão observado é a desconexão entre o Executivo (Presidente) e o Legislativo (Distrital).
+
+2. O PFL, partido do governador eleito (José Roberto Arruda) e sucessor do grupo político Roriz/Arruda, demonstra uma força eleitoral robusta.
+
+3. O PT, embora derrotado na maioria das Zonas para Presidente, demonstra ser o único partido de esquerda com capilaridade suficiente para competir localmente.
+
+
+#### Top 3 Partidos que mais recebem votos por RA para Deputado Distrital em 2010
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para Deputado Distrital por zona em 2010
+df_mais_votos_patido_deputado_por_zona_2010 <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital", ano == 2010) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2010 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2010 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2010 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2010 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2010 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2010 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2010 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2010 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Com base nos gráficos da eleição para Deputado Distrital em 2010, podemos afirmar que:
+
+1. Em 2010, o voto para Presidente foi dominado pelo PV, que venceu na maioria das Zonas Eleitorais. No entanto, o voto para Distrital demonstra que o PT absorveu a maior parte desse capital político localmente, enquanto o PV foi irrelevante na eleição para deputado distrital.
+
+2. As estruturas tradicionais de direita e centro-direita (DEM e PMDB) mantiveram sua relevância no voto distrital.
+
+#### Top 3 Partidos que mais recebem votos por RA para Deputado Distrital em 2014
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para Deputado distrital por zona em 2014
+df_mais_votos_patido_deputado_por_zona_2014 <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital", ano == 2014) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2014 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2014 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2014 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2014 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2014 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2014 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2014 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2014 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Com base nos gráficos de 2014, pode-se observar que:
+
+1. Em 2014, o DF estava dividido entre PSDB (Aécio) e PSB (Marina), com o PT em terceiro, para a disputa da presidência. No entanto, o voto presidencial em Marina (PSB) não foi convertido em votos para a legenda no pleito proporcional, confirmando a natureza puramente ideológica e não transferível de sua votação.
+
+2. O PMDB (PMDB/MDB), a estrutura mais estável do DF, é o partido mais votado em várias zonas.
+
+3. O PT, que havia liderado diversas zonas em 2010, teve uma queda de performance em 2014, refletindo a rejeição generalizada ao partido na capital, que se traduziu tanto no Executivo quanto no Legislativo.
+
+
+#### Top 3 Partidos que mais recebem votos por RA para Presidente em 2018
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para Deputado distrital por zona em 2018
+df_mais_votos_patido_deputado_por_zona_2018 <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital", ano == 2018) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2018 %>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2018 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2018 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2018 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2018 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2018 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2018 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2018 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Com base nos resultados apresentados em 2018, seguem algumas análises possiveis:
+
+1. O padrão mais notável é que a força avassaladora do PSL (Bolsonaro) no voto presidencial não se transferiu para o pleito proporcional em nível local. O PSL não aparece no Top 3 de votos de nenhuma Zona. Isso demonstra que o voto em Bolsonaro foi um voto ideológico anti-sistema focado no indivíduo, sem fidelidade à legenda no nível local.
+
+2. A ausência dos tradicionais (PT, PSDB, DEM , MDB) abriu espaço para siglas que ofereciam uma base de nicho (PRB, NOVO) ou que atuaram como mero veículo de candidatos (PROS, AVANTE) para o voto desorientado da população.
+
+#### Top 3 Partidos que mais recebem votos por RA para Deputado Distrital em 2022
+
+```{r}
+
+# Criar o Dataframe com os dados dos top 3 partidos mais votados para Deputado Distrital por zona em 2022
+df_mais_votos_patido_deputado_por_zona_2022 <- df_resultado_eleicao %>% 
+  filter(cargo == "deputado distrital", ano == 2022) %>%
+  group_by(sigla_partido, zona) %>% 
+  summarise(votos_total = sum(votos)) %>% 
+  arrange(zona, desc(votos_total)) %>%
+  group_by(zona) %>% 
+  slice_head(n = 3)
+
+# Criar gráfico das zonas 1 a 6
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2022%>% filter(zona < 7),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2022 (Zonas 1 a 6)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas 6 a 11
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2022 %>% filter(zona > 6 & zona < 13),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2022 (Zonas 7 a 12)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas de 13 a 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2022 %>% filter(zona > 12 & zona < 19),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2022 (Zonas 13 a 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+# Criar gráfico das zonas acima de 19
+ggplot(
+  data = df_mais_votos_patido_deputado_por_zona_2022 %>% filter(zona > 18),
+  mapping = aes(x = sigla_partido, y = votos_total)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(votos_total)),
+            hjust = 0.5,
+            vjust = -0.1,
+            color = "black", 
+            size = 3,
+            fontface = "bold") +
+  facet_wrap(~ zona, scales = "free_x") +
+  theme_light() +
+  labs(
+    title = "Top 3 Partidos com Mais Votos para Dep. Distrital em 2022 (acima de 18)",
+    x = "Partido",
+    y = "Total de Votos"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+Com base nos gráficos da eleição para Deputado Distrital em 2022, a análise revela a re-ideologização do voto proporcional, com o PL e o PT polarizando a Câmara Legislativa (CLDF). Mais algumas análises são:
+
+1. Diferente de 2018 (onde a onda Bolsonaro não se traduziu para a legenda PSL), em 2022, a polarização Executivo/Presidente se consolidou no Legislativo, com o PL e o PT disputando votos de legenda em várias Zonas.
+
+2. Em meio à polarização, o MDB aparece no Top 3 de várias Zonas. Provavelmente influenciado pelo então governados Ibaneis (também do MDB).
+
+3. O PSOL surge no Top 3 de diversas zonas, demostrando ter construído uma base ideológica com bastante capilaridade.
+
+#### Análise de Pareto por nome (Presidente)
+
+```{r}
+
+# Criar dataframe para a análise de pareto
+df_pareto_presidente <- df_resultado_eleicao %>%
+  filter(cargo == "presidente") %>%
+  
+  # Agrupar por nome limpo
+  group_by(sigla_partido, ano, nome_tratado) %>%
+  summarise(
+    nome_candidato = first(nome_tratado), 
+    votos_total = sum(votos),
+    .groups = "drop"
+  ) %>%
+  
+  # Pareto
+  arrange(ano, desc(votos_total)) %>%
+  group_by(ano) %>%
+  mutate(
+    total_ano = sum(votos_total),
+    perc_votos = votos_total / total_ano,
+    perc_acum = cumsum(perc_votos)
+  ) %>%
+  ungroup()
+
+# Lista os anos presentes no dataframe para usar no loop
+anos <- unique(df_pareto_presidente$ano)
+
+# Loop para gerar um gráfico de Pareto para cada ano
+walk(anos, function(ano_i) {
+  
+  df_ano <- df_pareto_presidente %>% 
+    filter(ano == ano_i)
+  
+  # Criar do gráfico
+  p <- ggplot(df_ano, aes(x = reorder(nome_tratado, -votos_total))) +
+    
+    # Grafico de Barras representando o total de votos
+    geom_col(aes(y = votos_total), fill = "blue", width = 0.7) +
+    
+    # Linha representando o percentual acumulado
+    geom_line(
+      aes(y = perc_acum * max(votos_total)),
+      color = "red", size = 1.2, group = 1
+    ) +
+    
+    # Pontos marcando cada valor da linha de percentual acumulado
+    geom_point(
+      aes(y = perc_acum * max(votos_total)),
+      color = "red", size = 3
+    ) +
+    
+    # Rotulo dos pontos da linha de percentual acumulado
+    geom_text(
+      aes(y = perc_acum * max(votos_total),
+          label = scales::percent(perc_acum, accuracy = 0.01)),
+      vjust = -0.7, size = 3, color = "red"
+    ) +
+    
+    scale_y_continuous(
+      name = "Total de Votos",
+      labels = comma,
+      sec.axis = sec_axis(
+        ~ . / max(df_ano$votos_total),
+        name = "Percentual Acumulado",
+        labels = percent
+      )
+    ) +
+    
+    theme_light() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+    labs(
+      title = paste("Análise de Pareto - Votos para Presidente (", ano_i, ")", sep = ""),
+      
+    )
+  
+  print(p)
+})
+```
+A análise dos gráficos de Pareto para a eleição presidencial no DF (2006 a 2022) oferece uma perspectiva clara sobre o padrão de concentração eleitoral do Distrito Federal.
+
+1. Em todos os anos (2006, 2010, 2014, 2018 e 2022), os três primeiros candidatos foram responsáveis por absorver mais de 85% do total de votos.
+
+2. É possível observar também a evolução do processo para um duelo binário (Bolsonarismo vs Petismo).É possivel observar o descolamento que as barras dos 2 primeiros candidatos adquirem em relação ao teceiro candidato a partir de 2018.
+
+3. Os gráficos de 2010 e 2014 ilustram que mesmo a aparição de uma forte Terceira Via (Marina Silva).
+
+#### Análise de Pareto por nome (Deputado Distritual)
+
+```{r}
+
+# Criar dataframe para a análise de Pareto
+df_pareto_deputado <- df_resultado_eleicao %>%
+  filter(cargo == "deputado distrital") %>% 
+  
+  # Agrupar por nome tratado
+  group_by(sigla_partido, ano, nome_tratado) %>%
+  summarise(
+    nome_candidato = first(nome_tratado),
+    votos_total = sum(votos),
+    .groups = "drop"
+  ) %>%
+  
+  # Ordenação inicial
+  arrange(ano, desc(votos_total)) %>%
+  
+  # Cálculo percentual por ano
+  group_by(ano) %>%
+  mutate(
+    total_ano = sum(votos_total),         # total de votos do ano
+    perc_votos = votos_total / total_ano  # percentual do total
+  ) %>%
+  ungroup()
+
+# Lista de anos presentes no dataframe
+anos_deputado <- unique(df_pareto_deputado$ano)
+
+# Loop para gerar gráfico de Pareto para cada ano (apenas TOP 30)
+walk(anos_deputado, function(ano_i) {
+  
+  df_ano <- df_pareto_deputado %>%
+    filter(ano == ano_i) %>%
+    arrange(desc(votos_total)) %>%
+    slice(1:15) %>%                          # seleciona apenas o TOP 25
+    mutate(perc_acum = cumsum(perc_votos))   # percentual acumulado apenas dos 30
+  
+  # Criar gráfico
+  p <- ggplot(df_ano, aes(x = reorder(nome_tratado, -votos_total))) +
+    
+    # Gráfico de barras representando o total de votos
+    geom_col(aes(y = votos_total), fill = "blue", width = 0.7) +
+    
+    # Linha representando o percentual acumulado
+    geom_line(
+      aes(y = perc_acum * max(votos_total)),
+      color = "red", size = 1.2, group = 1
+    ) +
+    
+    # Pontos marcando cada valor da linha de percentual acumulado
+    geom_point(
+      aes(y = perc_acum * max(votos_total)),
+      color = "red", size = 3
+    ) +
+    
+    # Rotulo dos pontos da linha de percentual acumulado
+    geom_text(
+      aes(y = perc_acum * max(votos_total),
+          label = scales::percent(perc_acum, accuracy = 1)),
+      vjust = -0.7, size = 3, color = "red"
+    ) +
+    
+    # Escalas de eixo: votos + percentual acumulado
+    scale_y_continuous(
+      name = "Total de Votos",
+      labels = scales::comma,
+      sec.axis = sec_axis(
+        ~ . / max(df_ano$votos_total),
+        name = "Percentual Acumulado",
+        labels = scales::percent
+      )
+    ) +
+    
+    # Tema e ajustes estéticos
+    theme_light() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    
+    # Título e rótulos
+    labs(
+      title = paste("Análise de Pareto - Votos para Deputado Distrital (Top 15 - ", ano_i, ")", sep = ""),
+      x = "Candidatos (Top 15)"
+    )
+  
+  print(p)
+})
+
+
+
+```
+É possivel observar uma curva de concentração suave, apresentando um contraste bem grande em relação a eleição presidencial. Mesmo com a polarização, a necessidade de eleger bancadas distribui o voto entre muitas legendas, o que pode ser um indicativo de que a fidelidade à estrutura local é maior do que a fidelidade ideológica.
+
+### 2. Análise de correlação para verificar o Efeito Coattail
+
+#### Correlação geral entre votos para presidente e votos para deputado distrital
+
+O análise abaixo detalha o cálculo do Efeito Carona (Coattail Effect), ou seja, o grau em que o desempenho percentual de um partido na eleição presidencial em uma determinada Zona Eleitoral é replicado pelo desempenho percentual de seus deputados distritais eleitos na mesma zona.
+
+O resultado será um número entre -1 e 1.
+
+- Resultado próximo a 1 (Forte Correlação): Isso indicaria que a votação total de um partido para Presidente em uma determinada Zona Eleitoral é acompanhada por uma votação total proporcionalmente alta para seus Deputados Distritais eleitos nessa mesma Zona. Ou seja, a força do Executivo está correlacionada com a força do Legislativo local do mesmo partido, sendo um possível instrumento para confirmar o Efeito Carona (ou fidelidade à legenda).
+
+- Resultado próximo a 0 (Fraca Correlação): Isso indicaria que a votação para Presidente e a votação para Deputado Distrital se dão de forma independente. A popularidade do candidato presidencial do partido tem pouca ou nenhuma influência sobre a votação obtida por seus candidatos eleitos na Câmara Legislativa do DF.
+
+```{r}
+
+# % presidencial por partido e zona
+pres_por_partido <- df_resultado_eleicao %>%
+  
+  # Filtra apenas votos para presidente
+  filter(cargo == "presidente") %>%
+  
+  # Agrupa por ano, zona e partido para somar os votos
+  group_by(ano, zona, sigla_partido) %>%
+  summarise(
+    votos_pres = sum(votos),     # total de votos do partido na zona
+    .groups = "drop"
+  ) %>%
+  
+  # Junta com o total de votos para presidente por ano e zona
+  left_join(
+    df_resultado_eleicao %>%
+      filter(cargo == "presidente") %>%          # filtra presidente novamente
+      group_by(ano, zona) %>%                    # agrupa por ano e zona
+      summarise(
+        total_pres = sum(votos),                 # total de votos na zona
+        .groups = "drop"
+      ),
+    by = c("ano", "zona")
+  ) %>%
+  
+  # Calcula o percentual do partido na zona
+  mutate(pct_pres = votos_pres / total_pres)
+
+```
+
+```{r}
+
+# Dataframe para Deputados distritais (24 por ano) 
+deputados_eleitos <- df_resultado_eleicao %>%
+  filter(cargo == "deputado distrital", turno == 1) %>%
+  mutate(
+    nome_limpo = nome_candidato %>%
+      toupper() %>%
+      iconv(to = "ASCII//TRANSLIT") %>%
+      str_replace_all("[:punct:]", " ") %>%
+      str_replace_all("\\b(DA|DE|DO|DAS|DOS| E )\\b", " ") %>%
+      str_trim() %>%
+      str_squish()
+  ) %>%
+  group_by(ano, sigla_partido, nome_limpo) %>%
+  summarise(
+    total_votos_candidato = sum(votos),
+    nome_candidato = first(nome_candidato),   # nome original mais comum
+    .groups = "drop"
+  ) %>%
+  group_by(ano) %>%
+  arrange(desc(total_votos_candidato)) %>%
+  slice_max(total_votos_candidato, n = 24, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(ano, sigla_partido, nome_candidato, total_votos_candidato)
+```
+
+```{r}
+# % distrital dos ELEITOS por partido e zona
+distrital_eleitos_por_partido <- df_resultado_eleicao %>%
+  filter(cargo == "deputado distrital") %>%
+  semi_join(deputados_eleitos, by = c("ano", "sigla_partido", "nome_candidato")) %>%
+  group_by(ano, zona, sigla_partido) %>%
+  summarise(votos_distrital_eleitos = sum(votos), .groups = "drop") %>%
+  left_join(
+    df_resultado_eleicao %>%
+      filter(cargo == "deputado distrital") %>%
+      group_by(ano, zona) %>%
+      summarise(total_distrital = sum(votos), .groups = "drop"),
+    by = c("ano", "zona")
+  ) %>%
+  mutate(pct_distrital = votos_distrital_eleitos / total_distrital)
+```
+
+```{r}
+# Base completa: TODOS os partidos que aparecem nos dois cargos
+base_completa_coattail <- pres_por_partido %>%
+  select(ano, zona, sigla_partido, pct_pres) %>%
+  inner_join(distrital_eleitos_por_partido %>%
+               select(ano, zona, sigla_partido, pct_distrital),
+             by = c("ano", "zona", "sigla_partido"))
+```
+
+```{r}
+# Correlação geral (todos os partidos, todas as zonas)
+cor.test(base_completa_coattail$pct_pres, base_completa_coattail$pct_distrital)
+
+```
+Com base no resultado do teste de correlação, é possivel afirmar que:
+
+- O Efeito Coattail (efeito carona/puxar votos) é moderado, mas existente
+
+Existe uma ligação estatisticamente significativa entre a força de um partido para Presidente em uma Zona Eleitoral e a votação de seus deputados distritais eleitos nessa mesma zona. Ou seja, a onda presidencial pode ajudar o partido no Legislativo. Contudo, o valor não está próximo de 1.0 (que indicaria uma relação quase perfeita), nem próximo de 0.8 (que seria uma correlação forte). O resultado de 0.53 confirma o que os gráficos mostraram: existe algum nível de dissociação e impede que o Efeito Coattail seja total.
+
+- Força e autonomia das campanhas locais
+
+A correlação moderada é o reflexo numérico da autonomia do Legislativo no Distrito Federal e do peso das campanhas individuais, independentemente da influência presidencial.A correlação moderada também leva a crer que a qualidade e a estrutura das campanhas locais para o legislativo do DF têm força suficiente para mitigar o impacto total da onda presidencial.
+
+- Intervalo de Confiança
+
+O intervalo de confiança de 0.455 a 0.601 indica que, se esta análise fosse repetida 100 vezes, em 95 delas o resultado estaria dentro dessa faixa.
+
+#### Correlação por eleição entre votos para presidente e votos para deputado distrital
+
+```{r}
+
+correlacao_por_ano <- base_completa_coattail %>%
+  group_by(ano) %>%
+  summarise(
+    n = n(),
+    correlacao = cor(pct_pres, pct_distrital),
+    r2 = summary(lm(pct_distrital ~ pct_pres))$r.squared,
+    beta = coef(lm(pct_distrital ~ pct_pres))[2]
+  ) %>%
+  arrange(desc(correlacao))
+
+ggplot(
+  data = correlacao_por_ano,
+  mapping = aes(x = factor(ano), y = correlacao)) +
+  geom_col(fill = "blue", width = 0.7) +
+  geom_text(aes(label = scales::comma(correlacao)),
+            vjust = -0.5,
+            size = 3
+            ) +
+  theme_light() +
+  labs(
+    title = "Correlação entre o percentual de votos para Presidente\ne para Deputado Distrital por ano",
+    x = "Ano",
+    y = "Correlação"
+  ) +
+theme(
+  strip.text = element_text(
+    face = "bold",
+    color = "black",
+    size = 8)
+)
+
+```
+O gráfico mostra o coeficiente de Correlação de Pearson entre a votação percentual para Presidente e a votação percentual para Deputado Distrital eleito em cada ano eleitoral.
+
+- Em 2006: Correlação Moderada (0.475)
+
+Demonstra que, mesmo em um ano de forte polarização ideológica no Executivo para o cargo de Presidente (PT vs. PSDB), o Efeito Coattail já era limitado no DF. A força de um partido para Presidente não se traduziu diretamente em uma força proporcional equivalente para seus Deputados Distritais eleitos.
+
+- Em 2010: Correlação Forte (0.682)
+
+2010 apresenta uma correlação forte inesperada, sendo o segundo valor mais alto da série. Possivelmente a forte correlação não se deve ao PV em si, mas sim ao fato de que os principais partidos na eleição para deputado distrital (PT, PSDB) também tiveram votações altas no Executivo (Dilma e Serra). O coattail funcionou para os partidos tradicionais que estavam bem posicionadas na eleição presidencial.
+
+- Em 2014 e 2018: Correlação Fraca (0.272 e 0.210)
+
+Os anos de 2014 e 2018 representam a independência máxima do Legislativo do DF em relação à disputa presidencial. Em 2014, a briga acirrada no Executivo (PSDB vs. PSB/Marina) não se traduziu em apoio para essas legendas no Legislativo. E em 2018, a anda Bolsonaro no Executivo foi totalmente incapaz de transferir votos para seus candidatos distritais. O voto foi quase totalmente dissociado.
+
+- Em 2022: Correlação Forte (0.745)
+
+O ano de 2022 estabelece a correlação mais alta dos anos analisados. Este valor parece apontar o sucesso da polarização do voto no DF. Os dois polos ideológicos (PL e PT) conseguiram construir ou reorganizar estruturas partidárias locais (candidatos a Distrital eleitos) eficientes, capazes de absorver e canalizar o voto da onda presidencial.
+
+A correlação demonstra que, em 2022, o voto ideológico para Presidente e a escolha do Deputado Distrital estavam mais alinhados do que em qualquer outro pleito.
+
+### 3. Quais ferramentas utilizadas na análise?
+Linguagem R
+
+### 4. Como essas informações ajudarão a responder às suas perguntas de negócios?
+
+A análise fornece uma visão quantitativa e histórica da dinâmica do voto no Distrito Federal.
+
+Para a pergunta central: "Existe correlação forte entre o voto presidencial e o voto distrital?" A análise responde:
+
+- A correlação não é forte de forma consistente. Ela é cíclica e volátil, flutuando de fraca (0.210 em 2018) para forte (0.745 em 2022). Mas é moderada quando analisada de maneira geral (0.532), o que pode indicar uma influência moderada no Legislativo, mas não determinante. O Efeito Coattail é um fator estratégico de oportunidade no DF. Ele parece se manifestar de forma forte quando os grandes polos ideológicos conseguem construir máquinas locais robustas (como em 2022). Em cenários de crise ou voto de protesto (2014 e 2018), a influência presidencial é baixa, garantindo a autonomia do Legislativo e permitindo que as campanhas locais tenham mais força.
+
+### 5. Como essas informações poderiam ser aplicadas?
+
+A análise pode oferecer três diretrizes principais:
+
+1. Como modelar a campanha: Efeito Coattail vs Máquina própria?
+
+Se um candidato for de um partido sem estrutura local, a análise parece demonstrar que apostar apenas na popularidade do Presidente é arriscado como estratégia de campanha. A melhor estratégia pode ser priorizar a capilaridade no bairro, o voto de nicho e o voto assistencialista. No entanto, se o candidato for do PL ou PT (ou qualquer outro partido que lidera o cenário de polarização em eleições futuras), a análise incentiva o alinhamento total com o Executivo Federal, pois a onda ideológica tem uma alta probabilidade de puxar seus votos. No entanto, a principal ressalva para a estratégia de alinhamento total (para partidos polarizados como PL/PT) é o risco de rejeição localizada e a volatilidade da onda ideológica.
+
+2. Mapeamento de riscos e oportunidades
+
+A análise do desempenho dos partidos nas Zonas Eleitorais pode mostrar onde o voto é mais independente ou influenciado. A busca deve ser por zonas de oportunidade (onde a campanha local é mais forte), estas são as Zonas onde o partido presidencial ganhou o Executivo, mas a legenda não dominou o Legislativo. E por evitar as zonas de risco, que são as zonas onde o partido presidencial ganhou o Executivo e sua legenda dominou o Legislativo.
+
+
+### 6. Existem dados e análises adicionais que poderiam ser usadas para expandir as descobertas?
+
+- Correlação por Zona eleitora: Identificar as Zonas onde o voto para Distrital é consistentemente independente e onde ele é totalmente dependente da onda presidencial históricamente.
+- Análise da transferência do voto nulo/branco: Entender a relação entre a rejeição ao sistema e a força das campanhas locais.
+- Correlação com o resultado para governador (executivo local): Calcular a correlação entre o percentual de votos para Governador (Vencedor) e o voto para Deputados Distritais eleitos, por partido. Essa análise demonstraria se o Efeito Coattail do Governador é mais forte ou mais fraco que o Efeito Coattail do Presidente no DF.
+
+### 7. Limitações dessa análise
+
+- Não se pode afirmar que o eleitor individual que votou no Presidente X também votou no Distrital Y. A correlação apenas demonstra a eficiência da agregação de votos do partido na Zona, sem capturar o voto individual.
+- A métrica de Distrital utilizada considera apenas os votos dos candidatos que foram eleitos. Isso pode subestimar o Efeito Coattail total do partido. Se o alto voto presidencial impulsionou vários candidatos (que, juntos, somaram muitos votos), mas nenhum atingiu o quociente eleitoral, essa influência não é totalmente capturada no cálculo.
+- O Coeficiente de Pearson demonstra uma associação, mas não comprova causalidade.
+- A correlação ao longo dos anos eleitorais apresentou uma volatilidade muito grande. O período analisado também é muito curto para tentar relizar qualquer previsão baseada em dados históricos.
+
+## CONCLUSÃO
+
+Esta análise aplicou o framework de análise de dados do Google Data Analytics Certificate para investigar o efeito coattail presidencial nas eleições para deputados distritais no Distrito Federal entre 2006 e 2022, com ênfase na correlação entre os votos válidos para o presidente eleito e os deputados distritais de sua coligação ou partido. Utilizando dados públicos do TSE processados em SQL no Google BigQuery e analisados em R Studio, os resultados revelam uma correlação geral moderada, indicando que o desempenho presidencial exerce influência parcial, mas não determinante, sobre o voto legislativo local.
+
+Ao longo das eleições, a correlação variou significativamente. Essa volatilidade reflete ciclos de polarização nacional, com maior alinhamento em anos de consolidação ideológica (como 2022, marcado pelo duelo PT-PL) e maior autonomia local em períodos de protesto ou fragmentação (como 2018, onde a onda bolsonarista não se transferiu para o PSL no legislativo). As análises exploratórias, incluindo gráficos de Pareto e distribuições por zona eleitoral, confirmam a desconexão parcial entre o voto executivo e legislativo local, destacando a resiliência de estruturas partidárias locais e a influência de campanhas individuais.
+
+Em suma, o efeito coattail presidencial no DF é cíclico e moderado, reforçando a necessidade de equilíbrio entre alinhamento nacional e autonomia local na dinâmica eleitoral.
